@@ -2,6 +2,7 @@
   'use strict';
 
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
+  const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
   const pad = n => String(n).padStart(2, '0');
 
   const debounce = (fn, delay) => {
@@ -69,7 +70,6 @@
     const connectionEl = $('#connection-status');
 
     function updateRAM() {
-      if (!ramEl) return;
       if (performance.memory) {
         const usedMB = Math.round(performance.memory.usedJSHeapSize / 1048576);
         const limitMB = Math.round(performance.memory.jsHeapSizeLimit / 1048576);
@@ -80,17 +80,19 @@
     }
 
     function updateBattery() {
-      if (!batteryEl) return;
       if ('getBattery' in navigator) {
         navigator.getBattery().then(battery => {
-          const renderBattery = () => {
-            const level = Math.round(battery.level * 100);
-            const charging = battery.charging ? '⚡' : '🔋';
-            batteryEl.textContent = `${charging} ${level}%`;
-          };
-          renderBattery();
-          battery.addEventListener('levelchange', renderBattery);
-          battery.addEventListener('chargingchange', renderBattery);
+          const level = Math.round(battery.level * 100);
+          const charging = battery.charging ? '⚡' : '🔋';
+          batteryEl.textContent = `${charging} ${level}%`;
+
+          battery.addEventListener('levelchange', () => {
+            const newLevel = Math.round(battery.level * 100);
+            batteryEl.textContent = `${battery.charging ? '⚡' : '🔋'} ${newLevel}%`;
+          });
+          battery.addEventListener('chargingchange', () => {
+            batteryEl.textContent = `${battery.charging ? '⚡' : '🔋'} ${Math.round(battery.level * 100)}%`;
+          });
         }).catch(() => {
           batteryEl.textContent = '—';
         });
@@ -100,15 +102,14 @@
     }
 
     function updateConnection() {
-      if (!connectionEl) return;
-      if ('connection' in navigator && navigator.connection) {
+      if ('connection' in navigator) {
         const conn = navigator.connection;
-        const renderConn = () => {
-          const type = conn.effectiveType || conn.type || 'unknown';
-          connectionEl.textContent = type.toUpperCase();
-        };
-        renderConn();
-        conn.addEventListener('change', renderConn);
+        const type = conn.effectiveType || conn.type || 'unknown';
+        connectionEl.textContent = type.toUpperCase();
+
+        conn.addEventListener('change', () => {
+          connectionEl.textContent = (conn.effectiveType || conn.type || 'unknown').toUpperCase();
+        });
       } else {
         connectionEl.textContent = '—';
       }
@@ -123,10 +124,13 @@
   // ========== OFFLINE MODE INDICATOR ==========
   (function() {
     const offlineIndicator = $('#offline-indicator');
-    if (!offlineIndicator) return;
 
     function updateOfflineStatus() {
-      offlineIndicator.style.display = navigator.onLine ? 'none' : 'flex';
+      if (!navigator.onLine) {
+        offlineIndicator.style.display = 'flex';
+      } else {
+        offlineIndicator.style.display = 'none';
+      }
     }
 
     window.addEventListener('online', updateOfflineStatus);
@@ -182,7 +186,7 @@
           console.warn(`Fullscreen error: ${err.message}`);
         });
       } else {
-        document.exitFullscreen().catch(() => {});
+        document.exitFullscreen();
       }
     }
 
@@ -199,7 +203,11 @@
 
     document.addEventListener('fullscreenchange', () => {
       if (fullscreenBtn) {
-        fullscreenBtn.style.background = document.fullscreenElement ? 'var(--accent-dim)' : '';
+        if (document.fullscreenElement) {
+          fullscreenBtn.style.background = 'var(--accent-dim)';
+        } else {
+          fullscreenBtn.style.background = '';
+        }
       }
     });
   })();
@@ -231,7 +239,7 @@
 
       if (m !== lastMin) {
         lastMin = m;
-        timeEl.textContent = `${pad(h12)}:${pad(m)}`;
+        if (timeEl) timeEl.textContent = `${pad(h12)}:${pad(m)}`;
         if (ampmEl) ampmEl.textContent = h24 < 12 ? 'AM' : 'PM';
 
         if (timezoneEl) {
@@ -245,7 +253,7 @@
         }
 
         if (greetEl) {
-          const greeting = h24 < 5 ? 'Good night' : h24 < 12 ? 'Good morning' : h24 < 17 ? 'Good afternoon' : h24 < 21 ? 'Good evening' : 'Good night';
+          let greeting = h24 < 5 ? 'Good night' : h24 < 12 ? 'Good morning' : h24 < 17 ? 'Good afternoon' : h24 < 21 ? 'Good evening' : 'Good night';
           greetEl.textContent = `${greeting}, Lord Bismark ☥`;
         }
 
@@ -267,7 +275,7 @@
     if (!weatherEl) return;
 
     const cached = store.get('weather');
-    if (cached && Date.now() - cached.ts < 30 * 60 * 1000) {
+    if (cached && typeof cached.text === 'string' && !cached.text.includes('<') && Date.now() - cached.ts < 30 * 60 * 1000) {
       weatherEl.textContent = cached.text;
       return;
     }
@@ -275,8 +283,12 @@
     fetch('https://wttr.in?format=%t+%C&lang=en', { signal: AbortSignal.timeout(5000) })
       .then(r => r.text())
       .then(text => {
-        const clean = text.trim().replace(/\+/g, ' ');
-        weatherEl.textContent = clean || '—';
+        const clean = text.trim().replace(/\s+/g, ' ');
+        if (!clean || clean.includes('<') || clean.length > 60) {
+          weatherEl.textContent = '—';
+          return;
+        }
+        weatherEl.textContent = clean;
         store.set('weather', { text: clean, ts: Date.now() });
       })
       .catch(() => { weatherEl.textContent = '—'; });
@@ -396,7 +408,6 @@
   // ========== MOST VISITED ==========
   (function() {
     const mostVisitedGrid = $('#most-visited-grid');
-    const linksGrid = $('#links-grid');
     const clearBtn = $('#most-visited-clear');
     if (!mostVisitedGrid) return;
 
@@ -408,7 +419,6 @@
       if (existing) {
         existing.count++;
         existing.lastVisited = Date.now();
-        if (label) existing.label = label;
       } else {
         visits.push({ url, label, count: 1, lastVisited: Date.now() });
       }
@@ -418,33 +428,31 @@
       renderMostVisited();
     }
 
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
     function renderMostVisited() {
       if (!mostVisitedGrid) return;
-      mostVisitedGrid.textContent = '';
-
       if (visits.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'most-visited-empty';
-        empty.textContent = 'Click links to build your most visited list';
-        mostVisitedGrid.appendChild(empty);
+        mostVisitedGrid.innerHTML = '<div class="most-visited-empty">Click links to build your most visited list</div>';
         return;
       }
 
-      visits.forEach(visit => {
-        const a = document.createElement('a');
-        a.href = visit.url;
-        a.className = 'most-visited-item';
-        a.target = '_blank';
-        a.rel = 'noopener';
-        const fallbackLabel = (() => {
-          try { return new URL(visit.url).hostname; } catch { return 'Link'; }
-        })();
-        const cleanLabel = visit.label || fallbackLabel;
-        a.textContent = `⭐ ${cleanLabel}`;
-        a.addEventListener('click', () => {
-          trackVisit(visit.url, cleanLabel);
+      mostVisitedGrid.innerHTML = visits.map(visit => `
+        <a href="${visit.url}" class="most-visited-item" target="_blank" rel="noopener" data-track="true">
+          ⭐ ${escapeHtml(visit.label || visit.url.split('/')[2] || 'Link')}
+        </a>
+      `).join('');
+
+      mostVisitedGrid.querySelectorAll('[data-track="true"]').forEach(link => {
+        link.addEventListener('click', (e) => {
+          const url = link.getAttribute('href');
+          const label = link.textContent.replace('⭐ ', '');
+          trackVisit(url, label);
         });
-        mostVisitedGrid.appendChild(a);
       });
     }
 
@@ -456,17 +464,15 @@
       });
     }
 
-    if (linksGrid) {
-      linksGrid.addEventListener('click', e => {
-        const card = e.target.closest('.link-card[href]:not(.link-card--add)');
-        if (!card) return;
-        const url = card.getAttribute('href');
-        const label = card.dataset.label || card.querySelector('.link-card__label')?.textContent?.trim() || '';
+    document.querySelectorAll('.link-card[href]:not([href="#"]), .most-visited-item').forEach(link => {
+      link.addEventListener('click', (e) => {
+        const url = link.getAttribute('href');
+        const label = link.querySelector('.link-card__label')?.textContent || link.textContent;
         if (url && url !== '#') {
           setTimeout(() => trackVisit(url, label), 10);
         }
       });
-    }
+    });
 
     renderMostVisited();
   })();
@@ -602,7 +608,6 @@
       a.rel = 'noopener';
       a.dataset.custom = 'true';
       a.dataset.id = link.id;
-      a.dataset.label = link.name;
 
       a.addEventListener('click', () => {
         store.session.set('workspace_scroll', window.scrollY);
@@ -735,7 +740,7 @@
               } else {
                 alert('Invalid file format');
               }
-            } catch {
+            } catch (err) {
               alert('Error parsing file');
             }
           };
