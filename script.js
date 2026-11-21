@@ -5,6 +5,12 @@
   const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
   const pad = n => String(n).padStart(2, '0');
 
+  const isTypingTarget = el => {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(el.isContentEditable);
+  };
+
   const debounce = (fn, delay) => {
     let timer;
     return (...args) => {
@@ -138,7 +144,7 @@
     updateOfflineStatus();
   })();
 
-  // ========== FOCUS MODE (F11) ==========
+  // ========== FOCUS MODE (Alt + Shift + F) ==========
   (function() {
     const focusBtn = $('#focus-toggle');
     const focusModeKey = 'focus_mode';
@@ -169,14 +175,14 @@
     }
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'F11') {
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         toggleFocusMode();
       }
     });
   })();
 
-  // ========== FULLSCREEN MODE (F12) ==========
+  // ========== FULLSCREEN MODE (Alt + Shift + Enter) ==========
   (function() {
     const fullscreenBtn = $('#fullscreen-toggle');
 
@@ -195,7 +201,7 @@
     }
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'F12') {
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.key === 'Enter') {
         e.preventDefault();
         toggleFullscreen();
       }
@@ -525,12 +531,12 @@
     }
 
     document.addEventListener('keydown', e => {
-      if (e.key === '/' && document.activeElement !== input && !e.ctrlKey && !e.metaKey) {
+      if (!isTypingTarget(e.target) && !e.altKey && !e.ctrlKey && !e.metaKey && e.key === '/') {
         e.preventDefault();
         input.focus();
         input.select();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         input.focus();
         input.select();
@@ -803,7 +809,7 @@
     helpModal.addEventListener('click', e => { if (e.target === helpModal) closeHelp(); });
 
     document.addEventListener('keydown', e => {
-      if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+      if (!isTypingTarget(e.target) && !e.altKey && !e.ctrlKey && !e.metaKey && e.key === '?') {
         e.preventDefault();
         openHelp();
       }
